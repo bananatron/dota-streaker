@@ -1,0 +1,237 @@
+<%=
+require 'json'
+require 'open-uri'
+
+
+def FetchWin(aim)
+
+	buffer = open(aim, "UserAgent" => "Ruby-Wget").read
+	match_result = JSON.parse(buffer)
+	match_result = match_result["result"]
+	$radiant_win = match_result["radiant_win"]
+	$lobby_type = match_result["lobby_type"]
+
+#Excluding cases where the match isn't returning true or false if API 
+#is being weird because that will fuck up everything - Also excluding
+#bad lobby types. Even though the dota API docs say -1 through 5 are valid
+#i've come across lobby type 7 in matchmaking.
+	unless [-1, 1, 3, 4,].include?($lobby_type)
+		case $radiant_win
+			when true, false 
+				return $radiant_win
+		else
+				return "No data"
+		end
+	end
+end
+
+#TAKES INPUT and determines if it's 64-bit ID or standard dota ID
+$id_detect = username
+
+
+  if $id_detect.length > 10
+    $master_id = $id_detect.to_i - 76561197960265728
+  else
+    $master_id = $id_detect.to_i
+  end
+
+#First number 7443 is my 64 bit steam ID.
+#Account ID 46481715 is mine
+#$bit_id = 76561198006747443 - 76561197960265728
+#$master_id = 37934158
+#STEAMID64 - 76561197960265728 = STEAMID32
+#STEAMID32 + 76561197960265728 = STEAMID64
+
+url = "http://api.steampowered.com/IDOTA2Match_570/GetMatchHistory/V001/?account_id=#{$master_id}&matches_requested=8&key=7D73411819A2393855610A2F45648EC2"
+buffer = open(url, "UserAgent" => "Ruby-Wget").read
+
+#Skip parse if no data is present.
+if buffer.include?"Cannot get match"
+  skip_parse = true
+  $master_id = 0
+end
+
+if skip_parse != true
+	result = JSON.parse(buffer)
+	result = result["result"]
+	matches = result["matches"]
+
+	#Match_id pulls in list of match ids in total
+	match_id = []
+	#Players pulls in player data
+	players = []
+		matches.map do |x|
+			match_id << x["match_id"]      
+			players << x["players"]
+		end
+
+	#Playerdata drills into players and returns data relevant to your $master_id	 
+	playerdata = []
+	players.map do |p|
+
+	tempvar = p
+	 tempvar.map do |t|
+
+		if t["account_id"] == $master_id
+			tempvar2 = t
+			playerdata << tempvar2
+		end
+		end
+	end
+
+	team_table = []
+	#Determine if player was on radiant (true) or dire (false)
+	#Then compare this to match detail api to compare if dire or radiant won match
+	playerdata.map! do |x|
+		x.each do |k, v|
+				if k == "player_slot"
+					if v > 100
+						x[k] = false
+						team_table << false
+					else
+						x[k] = true
+						team_table << true
+					end
+				end
+			end
+		end
+
+	#Puts match_ids and teams in a hash for comparison later 
+	win_table = Hash[match_id.zip(team_table)]
+
+	win_results = []
+	match_id.each do |x|
+	  temp_url = "http://api.steampowered.com/IDOTA2Match_570/GetMatchDetails/V001/?match_id=#{x}&key=7D73411819A2393855610A2F45648EC2"
+	  win_results << FetchWin(temp_url)
+	end
+
+	#This output will be stored for final page to review the most recent wins/losses
+	winloss_output = []
+	#Will calculate final streak w/ integers
+	win_counter = []
+	combine = win_results.zip(team_table)
+
+	combine.each do |x, y|
+		if x == y
+			winloss_output << "WIN"
+			win_counter << 1
+			else
+			winloss_output << "LOSS"
+			win_counter << 0
+		end
+	end
+
+	#win_counter stores array of 1s (wins) and 0 (losses) in sequential order to 
+	#determine win/loss streak because idk another way to do it. output to win_streak
+
+	base_count = win_counter[0] + win_counter [1]
+
+	streak_count = 0
+	#Winning streak
+	if base_count == 2
+		win_counter.each do |w|
+			if w == 1
+				streak_count += 1
+				else
+				break 
+			end
+		end
+		feedback =  "You're on a #{streak_count} game winning streak."
+		feedtype = "winning"
+	end
+
+	#Losing streak
+	if base_count == 0
+		win_counter.each do |l|
+			if l == 0
+				streak_count += 1
+				else
+				break
+			end
+		end
+		feedback =  "You're on a #{streak_count} game losing streak."
+		feedtype = "losing"
+	end
+
+	#No streak
+	if base_count == 1
+		feedback =  "You aren't on a streak yet."
+	end
+
+	proplayers = [ "Dendi", "IceIceice", "AdmiralBulldog", "Bulba", "XBOCT" ]
+	kidnames = [ "sport", "champ", "dude", "tyke", "squirt", "small fry" ]
+	feedback2 = ""
+	if feedtype == "winning"
+		case streak_count
+		  when 2
+			feedback2 = "You're on your way to the big leagues, #{kidnames[rand(6)]}."
+		  when 3
+			feedback2 = "The gods of <b>RAGE</b> are beginning to notice you."
+		  when 4
+			feedback2 = "You're pushing your luck a bit, don't you think?"
+		  when 5
+			feedback2 = "It's possible that you're <b>TOO</b> good."
+		  when 6
+			feedback2 = "Seriously, are you #{proplayers[rand(5)]}?"
+		  when 7
+			feedback2 = "I don't even know what to say to you..."
+		  when 8
+			feedback2 = "#tryhard"
+		  end
+
+	elsif feedtype == "losing"
+		case streak_count
+		  when 2
+			feedback2 = "Cheer up Charlie, we all have bad days."
+		  when 3
+			feedback2 = "Get more bracers next time."
+		  when 4
+			feedback2 = "Maybe try to not suck so bad?"
+		  when 5
+			feedback2 = "How are those anger issues holding up?"
+		  when 6
+			feedback2 = "It might be time to re-evaluate your hobbies..."
+		  when 7
+			feedback2 = "Are you actively trying to lose?"
+		  when 7
+			feedback2 = "I didn't think this level of failure was even possible..."
+		  end
+	end
+#End skip parse condition
+end
+
+  if $master_id <= 0
+	feedback = "Not a valid steam ID."
+	feedback2 = ""
+  end
+ 
+
+%>
+
+<center>
+<p> 
+<strong><%= feedback %></p></strong>
+<br><i>
+<%= feedback2 %></i>
+<br><br><br>
+
+
+
+<b>Most recent games:</b><br>
+<%= unless $master_id == 0
+winloss_output.join("<br>") 
+end %>
+</center>
+<br><br>
+<font size="2">
+
+
+
+<p align="right">
+
+
+	<br>Account ID: <a href="http://dotabuff.com/players/<%=$master_id%>"><i><%= $master_id %></i></a></font>
+	<br><a href="/about">About DS</a>
+
+
+
