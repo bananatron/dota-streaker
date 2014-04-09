@@ -1,6 +1,5 @@
 dota-streaker
 =============
-Technical
 
 Dota streaker is a ruby/sinatra app.
 
